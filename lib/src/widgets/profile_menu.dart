@@ -51,6 +51,34 @@ class _ProfileMenuState extends State<ProfileMenu> {
     }
   }
 
+  Future<void> _logout(BuildContext context) async {
+    try {
+      // Clear application state
+      if (mounted) {
+        setState(() {
+          // Clear other states like chat lists if needed
+        });
+      }
+
+      // Unsubscribe from all Supabase real-time subscriptions
+      Supabase.instance.client.removeAllChannels();
+
+      // Perform logout
+      await Supabase.instance.client.auth.signOut();
+
+      // Navigate to the login screen
+      Navigator.of(context).pop(); // Close the ProfileMenu
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+      );
+    } catch (e) {
+      // Handle errors gracefully
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error logging out: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -203,21 +231,4 @@ class _ProfileMenuState extends State<ProfileMenu> {
       ),
     );
   }
-
-  Future<void> _logout(BuildContext context) async {
-    try {
-      await Supabase.instance.client.auth.signOut();
-      Navigator.of(context).pop(); // Close the ProfileMenu
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => LoginScreen()),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error logging out: $e')),
-      );
-    }
-  }
 }
-
-
-

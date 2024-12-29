@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/src/widgets/chat_screen.dart';
+import 'dart:async';
 
 class ChatSection extends StatefulWidget {
   const ChatSection({Key? key}) : super(key: key);
@@ -9,12 +10,12 @@ class ChatSection extends StatefulWidget {
   State<ChatSection> createState() => _ChatSectionState();
 }
 
-class _ChatSectionState extends State<ChatSection>
-    with TickerProviderStateMixin {
+class _ChatSectionState extends State<ChatSection> with TickerProviderStateMixin {
   final SupabaseClient _supabase = Supabase.instance.client;
   late TabController _tabController;
   List<Map<String, dynamic>> _chatList = [];
   List<Map<String, dynamic>> _contactsList = [];
+  late StreamSubscription _subscription;
 
   @override
   void initState() {
@@ -26,6 +27,7 @@ class _ChatSectionState extends State<ChatSection>
 
   @override
   void dispose() {
+    _subscription.cancel(); // Cancel subscription to avoid memory leaks
     _tabController.dispose();
     super.dispose();
   }
@@ -39,7 +41,7 @@ class _ChatSectionState extends State<ChatSection>
         throw Exception('User is not logged in.');
       }
 
-      // Fetch chats
+      // Fetch chats with user details
       final response = await _supabase
           .from('chats')
           .select('''
@@ -47,7 +49,8 @@ class _ChatSectionState extends State<ChatSection>
           user1_id,
           user2_id,
           messages(content, created_at),
-          profiles!chats_user2_id_fkey(username, profile_image_url)
+          user1:profiles!chats_user1_id_fkey(username, profile_image_url),
+          user2:profiles!chats_user2_id_fkey(username, profile_image_url)
         ''')
           .or('user1_id.eq.$currentUserId,user2_id.eq.$currentUserId');
 
@@ -75,13 +78,10 @@ class _ChatSectionState extends State<ChatSection>
     }
   }
 
-
-
-
   /// Subscribe to real-time chat updates
   void _subscribeToChats() {
     try {
-      _supabase
+      _subscription = _supabase
           .from('messages')
           .stream(primaryKey: ['id'])
           .listen((data) {
@@ -111,8 +111,7 @@ class _ChatSectionState extends State<ChatSection>
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
-              contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
           ),
         ),
@@ -205,21 +204,23 @@ class _ChatSectionState extends State<ChatSection>
       itemCount: _chatList.length,
       itemBuilder: (context, index) {
         final chat = _chatList[index];
-        final otherUser = chat['profiles'];
+        final currentUserId = _supabase.auth.currentUser?.id;
+        final isUser1 = chat['user1_id'] == currentUserId;
+        final otherUser = isUser1 ? chat['user2'] : chat['user1'];
         final lastMessage = chat['messages'].isNotEmpty
             ? chat['messages'].last['content']
             : 'No messages yet';
 
         return ListTile(
           leading: CircleAvatar(
-            backgroundImage: otherUser['profile_image_url'] != null
+            backgroundImage: (otherUser != null && otherUser['profile_image_url'] != null)
                 ? NetworkImage(otherUser['profile_image_url'])
                 : null,
-            child: otherUser['profile_image_url'] == null
+            child: (otherUser == null || otherUser['profile_image_url'] == null)
                 ? const Icon(Icons.person)
                 : null,
           ),
-          title: Text(otherUser['username']),
+          title: Text(otherUser?['username'] ?? 'Unknown User'),
           subtitle: Text(
             lastMessage,
             maxLines: 1,

@@ -1,7 +1,99 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
 
-class NotificationMenu extends StatelessWidget {
+class NotificationMenu extends StatefulWidget {
   const NotificationMenu({Key? key}) : super(key: key);
+
+  @override
+  State<NotificationMenu> createState() => _NotificationMenuState();
+}
+
+class _NotificationMenuState extends State<NotificationMenu> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+  List<Map<String, dynamic>> _notifications = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNotifications();
+    _subscribeToMessages();
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel(); // Cancel the subscription on dispose
+    super.dispose();
+  }
+
+  /// Fetch initial notifications
+  Future<void> _fetchNotifications() async {
+    try {
+      final response = await _supabase
+          .from('notifications')
+          .select('id, title, content, is_read, created_at')
+          .order('created_at', ascending: false);
+
+      if (response == null) {
+        throw Exception('Failed to fetch notifications.');
+      }
+
+      setState(() {
+        _notifications = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      debugPrint('Error fetching notifications: $e');
+    }
+  }
+
+
+  /// Subscribe to new messages and add notifications
+  void _subscribeToMessages() {
+    try {
+      _subscription = _supabase
+          .from('messages')
+          .stream(primaryKey: ['id'])
+          .listen((data) {
+        debugPrint('New message received: $data');
+
+        if (data.isNotEmpty) {
+          final newMessage = data.first;
+
+          setState(() {
+            _notifications.insert(0, {
+              'id': newMessage['id'],
+              'title': 'New Message',
+              'content': newMessage['content'],
+              'is_read': false,
+              'created_at': newMessage['created_at'],
+            });
+          });
+        }
+      }, onError: (error) {
+        debugPrint('Error in message subscription: $error');
+      });
+    } catch (e) {
+      debugPrint('Error subscribing to messages: $e');
+    }
+  }
+
+  /// Mark all notifications as read
+  void _markAllAsRead() async {
+    try {
+      await _supabase
+          .from('notifications')
+          .update({'is_read': true});
+
+      setState(() {
+        for (var notification in _notifications) {
+          notification['is_read'] = true;
+        }
+      });
+    } catch (e) {
+      debugPrint('Error marking notifications as read: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +113,12 @@ class NotificationMenu extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Header with Mark All as Read
           Container(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.lightGreen.shade50,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Row(
               children: [
@@ -37,12 +130,10 @@ class NotificationMenu extends StatelessWidget {
                     color: Colors.grey[800],
                   ),
                 ),
-                Spacer(),
+                const Spacer(),
                 TextButton(
-                  onPressed: () {
-                    // Add mark all as read functionality
-                  },
-                  child: Text(
+                  onPressed: _markAllAsRead,
+                  child: const Text(
                     'Mark all as read',
                     style: TextStyle(
                       color: Colors.lightGreen,
@@ -53,18 +144,29 @@ class NotificationMenu extends StatelessWidget {
               ],
             ),
           ),
-          _buildNotificationItem(
-            title: "YOU'RE ALL CAUGHT UP",
-            subtitle: "COMEBACK LATER FOR NEW MESSAGES",
-            icon: Icons.check_circle,
-            isRead: true,
+          // Notifications List
+          Expanded(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _notifications.length,
+              itemBuilder: (context, index) {
+                final notification = _notifications[index];
+                return _buildNotificationItem(
+                  title: notification['title'] ?? 'New Notification',
+                  subtitle: notification['content'] ?? 'No content available',
+                  icon: Icons.message,
+                  isRead: notification['is_read'] ?? false,
+                );
+              },
+            ),
           ),
-          Divider(height: 1),
+          // View All Notifications
+          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+              children: const [
                 Text(
                   'View All Notifications',
                   style: TextStyle(
@@ -85,6 +187,7 @@ class NotificationMenu extends StatelessWidget {
     );
   }
 
+  /// Notification item widget
   Widget _buildNotificationItem({
     required String title,
     required String subtitle,
@@ -99,7 +202,7 @@ class NotificationMenu extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: EdgeInsets.all(8),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.lightGreen.shade100,
                 shape: BoxShape.circle,
@@ -110,7 +213,7 @@ class NotificationMenu extends StatelessWidget {
                 color: Colors.lightGreen.shade700,
               ),
             ),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,7 +226,7 @@ class NotificationMenu extends StatelessWidget {
                       color: Colors.grey[800],
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     subtitle,
                     style: TextStyle(

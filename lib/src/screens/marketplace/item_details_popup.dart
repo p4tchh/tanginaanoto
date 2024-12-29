@@ -62,8 +62,6 @@ void showItemDetailsPopup(
                       IconButton(
                         onPressed: () async {
 
-                          debugPrint('Item profiles data: ${item['profiles']}');
-
                           final uploaderId = item['profiles']?['id'];
                           final currentUserId =
                               Supabase.instance.client.auth.currentUser?.id;

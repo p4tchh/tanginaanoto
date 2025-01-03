@@ -118,11 +118,24 @@ class _UserDashboardState extends State<UserDashboard> {
           IconButton(
             onPressed: () {},
             icon: const Icon(Icons.star_border, color: Colors.amber),
-          ),
-          IconButton(
-            onPressed: () => _showNotificationMenu(context),
+          ),IconButton(
+            onPressed: () {
+              final userId = Supabase.instance.client.auth.currentUser?.id;
+
+              if (userId != null) {
+                _showNotificationMenu(context, userId);
+              } else {
+                debugPrint('User ID is null. Cannot show notifications.');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('You need to log in to view notifications.'),
+                  ),
+                );
+              }
+            },
             icon: Icon(Icons.notifications_none, color: Colors.grey[700]),
           ),
+
         ],
       ),
     );
@@ -216,19 +229,20 @@ class _UserDashboardState extends State<UserDashboard> {
   }
 
   // Dialog for Notification Menu
-  void _showNotificationMenu(BuildContext context) {
+  void _showNotificationMenu(BuildContext context, String userId) {
     showDialog(
       context: context,
       barrierColor: Colors.black54,
-      builder: (context) => const Dialog(
+      builder: (context) => Dialog(
         alignment: Alignment.topRight,
-        insetPadding: EdgeInsets.only(top: 70, right: 16),
+        insetPadding: const EdgeInsets.only(top: 70, right: 16),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        child: NotificationMenu(),
+        child: NotificationMenu(userId: userId), // Pass userId or other relevant data
       ),
     );
   }
+
 
   final List<Widget> _pages = [
     Column(

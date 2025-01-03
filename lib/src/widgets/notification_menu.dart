@@ -3,7 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 
 class NotificationMenu extends StatefulWidget {
-  const NotificationMenu({Key? key}) : super(key: key);
+  final String userId;
+
+  const NotificationMenu({Key? key, required this.userId}) : super(key: key);
 
   @override
   State<NotificationMenu> createState() => _NotificationMenuState();
@@ -18,72 +20,73 @@ class _NotificationMenuState extends State<NotificationMenu> {
   void initState() {
     super.initState();
     _fetchNotifications();
-    _subscribeToMessages();
+    _subscribeToNotifications();
   }
 
   @override
   void dispose() {
-    _subscription?.cancel(); // Cancel the subscription on dispose
+    _subscription?.cancel();
     super.dispose();
   }
 
-  /// Fetch initial notifications
+  /// Fetch notifications from the database
   Future<void> _fetchNotifications() async {
     try {
       final response = await _supabase
           .from('notifications')
-          .select('id, title, content, is_read, created_at')
+          .select(
+        '''
+            id, title, content, is_read, created_at,
+            sender:profiles(username, profile_image_url)
+            ''',
+      )
+          .eq('user_id', widget.userId)
           .order('created_at', ascending: false);
 
-      if (response == null) {
-        throw Exception('Failed to fetch notifications.');
-      }
+      final fetchedNotifications = List<Map<String, dynamic>>.from(response);
 
       setState(() {
-        _notifications = List<Map<String, dynamic>>.from(response);
+        _notifications = fetchedNotifications;
       });
     } catch (e) {
       debugPrint('Error fetching notifications: $e');
     }
   }
 
-
-  /// Subscribe to new messages and add notifications
-  void _subscribeToMessages() {
+  void _subscribeToNotifications() {
     try {
       _subscription = _supabase
-          .from('messages')
+          .from('notifications')
           .stream(primaryKey: ['id'])
-          .listen((data) {
-        debugPrint('New message received: $data');
+          .eq('user_id', widget.userId)
+          .listen((List<Map<String, dynamic>> data) async {
+        for (var notification in data) {
+          if (notification['sender_id'] == null) {
+            debugPrint('Skipping notification without sender_id: ${notification['id']}');
+            continue;
+          }
 
-        if (data.isNotEmpty) {
-          final newMessage = data.first;
-
-          setState(() {
-            _notifications.insert(0, {
-              'id': newMessage['id'],
-              'title': 'New Message',
-              'content': newMessage['content'],
-              'is_read': false,
-              'created_at': newMessage['created_at'],
+          if (!_notifications.any((n) => n['id'] == notification['id'])) {
+            setState(() {
+              _notifications.insert(0, notification);
             });
-          });
+          }
         }
-      }, onError: (error) {
-        debugPrint('Error in message subscription: $error');
       });
     } catch (e) {
-      debugPrint('Error subscribing to messages: $e');
+      debugPrint('Error subscribing to notifications: $e');
     }
   }
 
+
+
   /// Mark all notifications as read
-  void _markAllAsRead() async {
+  Future<void> _markAllAsRead() async {
     try {
       await _supabase
           .from('notifications')
-          .update({'is_read': true});
+          .update({'is_read': true})
+          .eq('user_id', widget.userId);
 
       setState(() {
         for (var notification in _notifications) {
@@ -106,7 +109,7 @@ class _NotificationMenuState extends State<NotificationMenu> {
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
             blurRadius: 8,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -154,8 +157,8 @@ class _NotificationMenuState extends State<NotificationMenu> {
                 return _buildNotificationItem(
                   title: notification['title'] ?? 'New Notification',
                   subtitle: notification['content'] ?? 'No content available',
-                  icon: Icons.message,
                   isRead: notification['is_read'] ?? false,
+                  sender: notification['sender'],
                 );
               },
             ),
@@ -187,13 +190,16 @@ class _NotificationMenuState extends State<NotificationMenu> {
     );
   }
 
-  /// Notification item widget
+  /// Build a single notification item
   Widget _buildNotificationItem({
     required String title,
     required String subtitle,
-    required IconData icon,
-    bool isRead = false,
+    required bool isRead,
+    required Map<String, dynamic>? sender,
   }) {
+    final senderUsername = sender?['username'] ?? 'Unknown Sender';
+    final senderProfileImage = sender?['profile_image_url'];
+
     return Container(
       color: isRead ? Colors.transparent : Colors.lightGreen.shade50,
       child: Padding(
@@ -201,17 +207,14 @@ class _NotificationMenuState extends State<NotificationMenu> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.lightGreen.shade100,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: Colors.lightGreen.shade700,
-              ),
+            CircleAvatar(
+              radius: 20,
+              backgroundImage: senderProfileImage != null
+                  ? NetworkImage(senderProfileImage)
+                  : null,
+              child: senderProfileImage == null
+                  ? const Icon(Icons.person, color: Colors.white)
+                  : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -219,19 +222,27 @@ class _NotificationMenuState extends State<NotificationMenu> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
-                    style: TextStyle(
+                    senderUsername,
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: Colors.grey[800],
+                      color: Colors.grey,
+                    ),
+                  ),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.black,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: Colors.grey,
                     ),
                   ),
                 ],

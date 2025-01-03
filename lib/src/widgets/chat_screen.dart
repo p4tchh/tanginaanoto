@@ -25,24 +25,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _fetchMessages() async {
     try {
-      // Get the current user ID
-      final currentUserId = _supabase.auth.currentUser?.id;
-
-      if (currentUserId == null) {
-        throw Exception('User is not logged in.');
-      }
-
-      // Fetch chat details to determine the receiver ID
-      final chatDetails = await _supabase
-          .from('chats')
-          .select('user1_id, user2_id')
-          .eq('id', widget.chatId)
-          .single();
-
-      final String receiverId = chatDetails['user1_id'] == currentUserId
-          ? chatDetails['user2_id']
-          : chatDetails['user1_id'];
-
       // Fetch messages with sender details
       final response = await _supabase
           .from('messages')
@@ -51,9 +33,17 @@ class _ChatScreenState extends State<ChatScreen> {
           .eq('chat_id', widget.chatId)
           .order('created_at', ascending: true);
 
-      // Update the state with the fetched messages
+      final fetchedMessages = List<Map<String, dynamic>>.from(response);
+
       setState(() {
-        _messages = List<Map<String, dynamic>>.from(response);
+        // Avoid resetting _messages if it already contains some messages
+        for (var message in fetchedMessages) {
+          if (!_messages.any((m) => m['id'] == message['id'])) {
+            _messages.add(message);
+          }
+        }
+        _messages.sort((a, b) =>
+            a['created_at'].compareTo(b['created_at'])); // Keep messages sorted
       });
 
       // Scroll to the latest message
@@ -62,6 +52,7 @@ class _ChatScreenState extends State<ChatScreen> {
       debugPrint('Error fetching messages: $e');
     }
   }
+
 
   void _subscribeToMessages() {
     try {
@@ -84,8 +75,11 @@ class _ChatScreenState extends State<ChatScreen> {
               message['sender'] = senderResponse;
             }
 
+            // Add the new message
             setState(() {
-              _messages.add(message); // Append the new message
+              _messages.add(message);
+              _messages.sort((a, b) => a['created_at']
+                  .compareTo(b['created_at'])); // Keep messages sorted
             });
           }
         }
@@ -100,16 +94,33 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
 
+
   Future<void> _sendMessage() async {
     final currentUserId = _supabase.auth.currentUser?.id;
-    if (_messageController.text.isEmpty) return;
+
+    if (_messageController.text.isEmpty || currentUserId == null) return;
 
     try {
-      await _supabase.from('messages').insert({
+      // Insert the message into the messages table
+      final response = await _supabase.from('messages').insert({
         'chat_id': widget.chatId,
         'sender_id': currentUserId,
         'content': _messageController.text,
-      });
+      }).select().single();
+
+      // Fetch the recipient user ID based on the chat
+      final recipientUserId = await _getRecipientUserId();
+
+      if (recipientUserId != null) {
+        // Create a notification for the recipient
+        await _supabase.from('notifications').insert({
+          'user_id': recipientUserId, // The user receiving the notification
+          'sender_id': currentUserId, // The user sending the message
+          'title': 'New Message',
+          'content': _messageController.text, // Optionally include the message content
+          'is_read': false,
+        });
+      }
 
       // Clear the message input field
       _messageController.clear();
@@ -117,9 +128,37 @@ class _ChatScreenState extends State<ChatScreen> {
       // Scroll to the latest message
       _scrollToLatestMessage();
     } catch (e) {
-      debugPrint('Error sending message: $e');
+      debugPrint('Error sending message or creating notification: $e');
     }
   }
+
+  Future<String?> _getRecipientUserId() async {
+    try {
+      final currentUserId = _supabase.auth.currentUser?.id;
+
+      if (currentUserId == null) return null;
+
+      // Fetch chat details to identify the recipient
+      final chatDetails = await _supabase
+          .from('chats')
+          .select('user1_id, user2_id')
+          .eq('id', widget.chatId)
+          .single();
+
+      if (chatDetails != null) {
+        // Determine the recipient based on the current user
+        return chatDetails['user1_id'] == currentUserId
+            ? chatDetails['user2_id']
+            : chatDetails['user1_id'];
+      }
+    } catch (e) {
+      debugPrint('Error fetching recipient user ID: $e');
+    }
+    return null;
+  }
+
+
+
 
   void _scrollToLatestMessage() {
     if (_scrollController.hasClients) {

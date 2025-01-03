@@ -19,8 +19,7 @@ class _NotificationMenuState extends State<NotificationMenu> {
   @override
   void initState() {
     super.initState();
-    _fetchNotifications();
-    _subscribeToNotifications();
+    _fetchAndSubscribeToNotifications();
   }
 
   @override
@@ -29,55 +28,58 @@ class _NotificationMenuState extends State<NotificationMenu> {
     super.dispose();
   }
 
-  /// Fetch notifications from the database
-  Future<void> _fetchNotifications() async {
+  /// Fetch notifications and subscribe to real-time updates
+  Future<void> _fetchAndSubscribeToNotifications() async {
     try {
+      // Fetch initial notifications
       final response = await _supabase
           .from('notifications')
-          .select(
-        '''
-            id, title, content, is_read, created_at,
-            sender:profiles(username, profile_image_url)
-            ''',
-      )
+          .select('''
+        id, title, content, is_read, created_at,
+        sender:profiles!notifications_sender_id_fkey(username, profile_image_url)
+    ''')
           .eq('user_id', widget.userId)
           .order('created_at', ascending: false);
+
 
       final fetchedNotifications = List<Map<String, dynamic>>.from(response);
 
       setState(() {
         _notifications = fetchedNotifications;
       });
-    } catch (e) {
-      debugPrint('Error fetching notifications: $e');
-    }
-  }
 
-  void _subscribeToNotifications() {
-    try {
+      // Subscribe to real-time updates
       _subscription = _supabase
           .from('notifications')
           .stream(primaryKey: ['id'])
           .eq('user_id', widget.userId)
           .listen((List<Map<String, dynamic>> data) async {
         for (var notification in data) {
-          if (notification['sender_id'] == null) {
-            debugPrint('Skipping notification without sender_id: ${notification['id']}');
-            continue;
-          }
-
           if (!_notifications.any((n) => n['id'] == notification['id'])) {
+            // Fetch sender details if not included
+            if (notification['sender'] == null && notification['sender_id'] != null) {
+              final senderResponse = await _supabase
+                  .from('profiles')
+                  .select('username, profile_image_url')
+                  .eq('id', notification['sender_id'])
+                  .maybeSingle();
+              if (senderResponse != null) {
+                notification['sender'] = senderResponse;
+              }
+            }
+
             setState(() {
               _notifications.insert(0, notification);
+              _notifications.sort((a, b) => b['created_at'].compareTo(a['created_at']));
             });
           }
         }
       });
+
     } catch (e) {
-      debugPrint('Error subscribing to notifications: $e');
+      debugPrint('Error fetching or subscribing to notifications: $e');
     }
   }
-
 
 
   /// Mark all notifications as read
@@ -253,4 +255,5 @@ class _NotificationMenuState extends State<NotificationMenu> {
       ),
     );
   }
+
 }

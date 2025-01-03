@@ -36,14 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final fetchedMessages = List<Map<String, dynamic>>.from(response);
 
       setState(() {
-        // Avoid resetting _messages if it already contains some messages
-        for (var message in fetchedMessages) {
-          if (!_messages.any((m) => m['id'] == message['id'])) {
-            _messages.add(message);
-          }
-        }
-        _messages.sort((a, b) =>
-            a['created_at'].compareTo(b['created_at'])); // Keep messages sorted
+        _messages = fetchedMessages;
       });
 
       // Scroll to the latest message
@@ -53,7 +46,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-
   void _subscribeToMessages() {
     try {
       _supabase
@@ -62,17 +54,18 @@ class _ChatScreenState extends State<ChatScreen> {
           .eq('chat_id', widget.chatId)
           .listen((List<Map<String, dynamic>> data) async {
         for (var message in data) {
-          // Check if the message is already in _messages
           if (!_messages.any((m) => m['id'] == message['id'])) {
             // Fetch sender details for the new message
-            final senderResponse = await _supabase
-                .from('profiles')
-                .select('username, profile_image_url')
-                .eq('id', message['sender_id'])
-                .maybeSingle();
+            if (message['sender'] == null && message['sender_id'] != null) {
+              final senderResponse = await _supabase
+                  .from('profiles')
+                  .select('username, profile_image_url')
+                  .eq('id', message['sender_id'])
+                  .maybeSingle();
 
-            if (senderResponse != null) {
-              message['sender'] = senderResponse;
+              if (senderResponse != null) {
+                message['sender'] = senderResponse;
+              }
             }
 
             // Add the new message
@@ -92,9 +85,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-
-
-
   Future<void> _sendMessage() async {
     final currentUserId = _supabase.auth.currentUser?.id;
 
@@ -102,7 +92,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       // Insert the message into the messages table
-      final response = await _supabase.from('messages').insert({
+      final messageResponse = await _supabase.from('messages').insert({
         'chat_id': widget.chatId,
         'sender_id': currentUserId,
         'content': _messageController.text,
@@ -112,12 +102,12 @@ class _ChatScreenState extends State<ChatScreen> {
       final recipientUserId = await _getRecipientUserId();
 
       if (recipientUserId != null) {
-        // Create a notification for the recipient
+        // Insert notification into the notifications table
         await _supabase.from('notifications').insert({
-          'user_id': recipientUserId, // The user receiving the notification
-          'sender_id': currentUserId, // The user sending the message
+          'user_id': recipientUserId,  // The recipient of the notification
+          'sender_id': currentUserId, // The sender (current user)
           'title': 'New Message',
-          'content': _messageController.text, // Optionally include the message content
+          'content': _messageController.text,
           'is_read': false,
         });
       }
@@ -131,6 +121,8 @@ class _ChatScreenState extends State<ChatScreen> {
       debugPrint('Error sending message or creating notification: $e');
     }
   }
+
+
 
   Future<String?> _getRecipientUserId() async {
     try {
@@ -156,9 +148,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     return null;
   }
-
-
-
 
   void _scrollToLatestMessage() {
     if (_scrollController.hasClients) {

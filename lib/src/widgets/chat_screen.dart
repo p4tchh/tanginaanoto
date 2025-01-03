@@ -15,12 +15,13 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<Map<String, dynamic>> _messages = [];
+  DateTime? _lastFetchedMessageTime; // Track the last message timestamp
+  bool _isInitialFetchComplete = false; // Flag to delay subscription
 
   @override
   void initState() {
     super.initState();
     _fetchMessages();
-    _subscribeToMessages();
   }
 
   Future<void> _fetchMessages() async {
@@ -37,7 +38,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
       setState(() {
         _messages = fetchedMessages;
+
+        // Update the last fetched timestamp
+        if (fetchedMessages.isNotEmpty) {
+          _lastFetchedMessageTime =
+              DateTime.parse(fetchedMessages.last['created_at']);
+        }
+
+        _isInitialFetchComplete = true; // Mark fetch as complete
       });
+
+      // Start real-time subscription after initial fetch
+      _subscribeToMessages();
 
       // Scroll to the latest message
       _scrollToLatestMessage();
@@ -47,6 +59,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _subscribeToMessages() {
+    // Ensure subscription only starts after initial fetch is complete
+    if (!_isInitialFetchComplete) return;
+
     try {
       _supabase
           .from('messages')
@@ -54,7 +69,11 @@ class _ChatScreenState extends State<ChatScreen> {
           .eq('chat_id', widget.chatId)
           .listen((List<Map<String, dynamic>> data) async {
         for (var message in data) {
-          if (!_messages.any((m) => m['id'] == message['id'])) {
+          // Check if the message is already in the list or is older than the last fetched time
+          if (!_messages.any((m) => m['id'] == message['id']) &&
+              (_lastFetchedMessageTime == null ||
+                  DateTime.parse(message['created_at'])
+                      .isAfter(_lastFetchedMessageTime!))) {
             // Fetch sender details for the new message
             if (message['sender'] == null && message['sender_id'] != null) {
               final senderResponse = await _supabase
@@ -122,8 +141,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-
-
   Future<String?> _getRecipientUserId() async {
     try {
       final currentUserId = _supabase.auth.currentUser?.id;
@@ -188,7 +205,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       Text(
                         isMe ? 'You' : sender?['username'] ?? 'Unknown Sender',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style:
+                        TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       Container(
                         padding: const EdgeInsets.all(10),

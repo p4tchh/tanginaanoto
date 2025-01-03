@@ -188,7 +188,7 @@ class _CustomDateButtonState extends State<CustomDateButton> {
       height: 50, // Consistent height matching CustomDropdownButton
       padding: EdgeInsets.symmetric(horizontal: 16), // Padding inside the container
       decoration: BoxDecoration(
-        color: Colors.white, // Button background
+        color: Colors.white, // Button backgrounds
         borderRadius: BorderRadius.circular(15), // Rounded corners
         boxShadow: [
           BoxShadow(

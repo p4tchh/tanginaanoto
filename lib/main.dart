@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'src/screens/auth/login_screen.dart';
 import 'src/screens/dashboard/user_dashboard.dart';
+import 'src/screens/welcome/welcome_screen.dart'; // Import the Welcome Screen
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +30,38 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: SessionChecker(), // New session checker
+      home: WelcomeOrSessionChecker(), // Decide between Welcome Screen or Session Checker
+    );
+  }
+}
+
+class WelcomeOrSessionChecker extends StatelessWidget {
+  const WelcomeOrSessionChecker({Key? key}) : super(key: key);
+
+  Future<bool> _hasSeenWelcomeScreen() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('hasSeenWelcome') ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _hasSeenWelcomeScreen(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.data == true) {
+          // If the user has seen the Welcome Screen, go to session checker
+          return SessionChecker();
+        } else {
+          // If not, show the Welcome Screen
+          return WelcomeScreen();
+        }
+      },
     );
   }
 }
@@ -75,6 +108,3 @@ class SessionChecker extends StatelessWidget {
     return null;
   }
 }
-
-
-

@@ -9,27 +9,28 @@ void showItemDetailsPopup(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    isScrollControlled: true, // Allow the bottom sheet to expand fully
+    isScrollControlled: true,
     builder: (BuildContext context) {
       return DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.7, // Adjust initial height
-        maxChildSize: 0.95, // Adjust maximum height
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
         builder: (context, scrollController) {
           return SingleChildScrollView(
-            controller: scrollController, // Connect to DraggableScrollableSheet
+            controller: scrollController,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Handle Indicator
                   Center(
                     child: Container(
-                      height: 5,
+                      height: 4,
                       width: 50,
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: Colors.grey[300],
+                        color: Colors.grey[400],
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
@@ -37,7 +38,7 @@ void showItemDetailsPopup(
                   // Item Image
                   if (item['images'] != null && item['images'].isNotEmpty)
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(15),
                       child: Image.network(
                         item['images'][0],
                         height: 200,
@@ -45,8 +46,8 @@ void showItemDetailsPopup(
                         fit: BoxFit.cover,
                       ),
                     ),
-                  const SizedBox(height: 16),
-                  // Item Name and Chat Icon Row
+                  const SizedBox(height: 20),
+                  // Item Name and Icons
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -54,14 +55,17 @@ void showItemDetailsPopup(
                         child: Text(
                           item['name'],
                           style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       IconButton(
+                        icon: const Icon(Icons.chat, color: Colors.lightGreen),
+                        iconSize: 28,
+                        tooltip: 'Chat with Uploader',
                         onPressed: () async {
-
                           final uploaderId = item['profiles']?['id'];
                           final currentUserId =
                               Supabase.instance.client.auth.currentUser?.id;
@@ -85,7 +89,6 @@ void showItemDetailsPopup(
                           }
 
                           try {
-                            // Check if a chat already exists between the users
                             final existingChat = await Supabase.instance.client
                                 .from('chats')
                                 .select()
@@ -96,7 +99,6 @@ void showItemDetailsPopup(
                                 .maybeSingle();
 
                             if (existingChat != null) {
-                              // Navigate to ChatScreen with existing chatId
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -106,17 +108,13 @@ void showItemDetailsPopup(
                                 ),
                               );
                             } else {
-                              // Create a new chat session
                               final newChat = await Supabase.instance.client
                                   .from('chats')
                                   .insert({
                                 'user1_id': currentUserId,
                                 'user2_id': uploaderId,
-                              })
-                                  .select()
-                                  .single();
+                              }).select().single();
 
-                              // Navigate to ChatScreen with new chatId
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -132,13 +130,11 @@ void showItemDetailsPopup(
                             );
                           }
                         },
-                        icon: const Icon(Icons.chat, color: Colors.lightGreen),
-                        tooltip: 'Chat with uploader',
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  // Price
+                  const SizedBox(height: 12),
+                  // Price and Quantity
                   Text(
                     '₱${item['price']}',
                     style: const TextStyle(
@@ -148,20 +144,55 @@ void showItemDetailsPopup(
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Uploader Info
-                  if (item['profiles'] != null)
-                    Text(
-                      'Uploaded by @${item['profiles']['username']}',
-                      style: TextStyle(color: Colors.grey[600]),
+                  Text(
+                    'Quantity: ${item['quantity'] ?? 'Not specified'}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
                     ),
-                  const SizedBox(height: 8),
-                  // Distance
-                  if (distance != null)
-                    Text(
-                      '${distance.toStringAsFixed(2)} km away',
-                      style: TextStyle(color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 12),
+                  // Uploader Info with Profile Picture
+                  if (item['profiles'] != null)
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundImage: item['profiles']['profile_image_url'] != null
+                              ? NetworkImage(item['profiles']['profile_image_url'])
+                              : null,
+                          child: item['profiles']['profile_image_url'] == null
+                              ? const Icon(Icons.person, color: Colors.white)
+                              : null,
+                          backgroundColor: Colors.grey[300],
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '@${item['profiles']['username']}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
                     ),
                   const SizedBox(height: 16),
+                  // Distance
+                  if (distance != null)
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, color: Colors.grey, size: 20),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${distance.toStringAsFixed(2)} km away',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 20),
                   // Description
                   const Text(
                     'Description',
@@ -173,22 +204,42 @@ void showItemDetailsPopup(
                   const SizedBox(height: 8),
                   Text(
                     item['description'] ?? 'No description available.',
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(fontSize: 15),
                   ),
-                  const SizedBox(height: 16),
-                  // Close Button
+                  const SizedBox(height: 20),
+                  // Reserve for Pickup Button
                   Center(
-                    child: ElevatedButton(
+                    child: ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Item reserved for pickup!'),
+                          ),
+                        );
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.lightGreen,
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 14, horizontal: 20),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        backgroundColor: Colors.lightGreen,
+                        elevation: 3,
+                        shadowColor: Colors.lightGreen.withOpacity(0.5),
+                      ),
+                      icon: const Icon(
+                        Icons.shopping_basket,
+                        size: 20,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        'Reserve for Pickup',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
                       ),
-                      child: const Text('Close'),
                     ),
                   ),
                 ],

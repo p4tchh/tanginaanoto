@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:typed_data';
 
 class UploadItemScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class _UploadItemScreenState extends State<UploadItemScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
+  final _quantityController = TextEditingController();
   bool _isLoading = false;
   List<XFile> _images = [];
   Position? _currentPosition;
@@ -25,6 +27,7 @@ class _UploadItemScreenState extends State<UploadItemScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
+    _quantityController.dispose();
     super.dispose();
   }
 
@@ -71,14 +74,38 @@ class _UploadItemScreenState extends State<UploadItemScreen> {
     }
   }
 
+  Future<bool> _canUpload() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastUploadTime = prefs.getInt('lastUploadTime');
+    final currentTime = DateTime.now().millisecondsSinceEpoch;
+
+    if (lastUploadTime == null || currentTime - lastUploadTime > 60000) {
+      return true; // More than 1 minute has passed or first upload
+    } else {
+      final remainingTime = ((60000 - (currentTime - lastUploadTime)) / 1000).ceil();
+      _showMessage('Please wait $remainingTime seconds before uploading again.');
+      return false;
+    }
+  }
+
+  Future<void> _setLastUploadTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentTime = DateTime.now().millisecondsSinceEpoch;
+    await prefs.setInt('lastUploadTime', currentTime);
+  }
+
   Future<void> _uploadItem() async {
+    if (!await _canUpload()) return;
+
     final String name = _nameController.text.trim();
     final String description = _descriptionController.text.trim();
     final String price = _priceController.text.trim();
+    final String quantity = _quantityController.text.trim();
 
     if (name.isEmpty ||
         description.isEmpty ||
         price.isEmpty ||
+        quantity.isEmpty ||
         _images.isEmpty ||
         _currentPosition == null) {
       _showMessage('Please fill in all fields, select images, and get location.');
@@ -94,21 +121,28 @@ class _UploadItemScreenState extends State<UploadItemScreen> {
       List<String> imageUrls = await _uploadImagesToSupabase();
 
       // Insert item details into the database
-      final response = await _supabase.from('items').insert({
+      final response = await _supabase
+          .from('items')
+          .insert({
         'user_id': _supabase.auth.currentUser?.id,
         'name': name,
         'description': description,
         'price': double.tryParse(price),
+        'quantity': int.tryParse(quantity), // Add quantity field
         'images': imageUrls,
         'latitude': _currentPosition?.latitude,
         'longitude': _currentPosition?.longitude,
-      });
+      })
+          .select()
+          .single();
 
-      if (response.error == null) {
+      // If the response is successful
+      if (response != null) {
+        await _setLastUploadTime();
         _showMessage('Item uploaded successfully!');
         Navigator.pop(context);
       } else {
-        _showMessage('Error uploading item: ${response.error!.message}');
+        throw Exception('Unexpected response from Supabase');
       }
     } catch (e) {
       _showMessage('Error uploading item: $e');
@@ -199,6 +233,19 @@ class _UploadItemScreenState extends State<UploadItemScreen> {
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 hintText: 'Enter price',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Quantity', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _quantityController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                hintText: 'Enter quantity',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
